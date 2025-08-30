@@ -1,4 +1,4 @@
-# main.py - v4: 1s windows @ 3 fps + 720px + defectos de composición (texto, occlusión, clutter, tilt, saliencia)
+# main.py - v4.1: Segmentación uniforme + defectos de composición
 from __future__ import annotations
 
 import argparse
@@ -54,6 +54,10 @@ MODELS_DIR = TRAINING_DIR / "models"
 METRICS_PATH = TRAINING_DIR / "metrics.json"
 SUPPORTED_VIDEO_EXTS = ['.mp4', '.mov', '.mkv', '.avi', '.webm']
 
+# --- Segmentación uniforme ---
+USE_UNIFORM_SEGMENTS = True    # activa la segmentación fija
+UNIFORM_SEGMENT_SEC  = 0.5     # tamaño de segmento
+
 # --- Tiempo / muestreo ---
 ANALYSIS_SIDE = 720                 # ↑ detalle para defectos sutiles
 MIN_SCENE_LEN_SEC = 1.0
@@ -89,6 +93,17 @@ class Scene:
 # Utilidades
 # ==========================
 def _now_stamp() -> str: return datetime.now().strftime("%Y-%m-%d_%H%M%S")
+
+def _video_duration_cv2(video_path: str) -> float:
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return 0.0
+    fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+    n   = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0
+    cap.release()
+    if fps <= 0.0 or n <= 0.0:
+        return 0.0
+    return float(n / fps)
 
 def _cache_paths(video_path: Path) -> dict:
     base = video_path.stem
@@ -359,10 +374,39 @@ class DefectFeatureExtractor:
 # Detección de escenas y sampling
 # ==========================
 def detect_scenes(video_path: str) -> List[Scene]:
+    """
+    Si USE_UNIFORM_SEGMENTS=True -> divide el vídeo en segmentos uniformes de UNIFORM_SEGMENT_SEC.
+    Si False -> fallback a PySceneDetect (tu lógica original).
+    """
+    if USE_UNIFORM_SEGMENTS:
+        try:
+            dur = _video_duration_cv2(video_path)
+            if dur <= 0.0:
+                LOGGER.error(f"No se pudo obtener la duración de {Path(video_path).name}")
+                return []
+            scenes: List[Scene] = []
+            idx = 0
+            t = 0.0
+            step = float(UNIFORM_SEGMENT_SEC)
+            eps = 1e-9
+            while t + eps < dur:
+                end = min(dur, t + step)
+                # Importante: NO filtramos por longitud aquí (queremos 0.5 s)
+                scenes.append(Scene(start=float(t), end=float(end), idx=idx))
+                idx += 1
+                t += step
+            if not scenes:
+                scenes = [Scene(start=0.0, end=float(dur), idx=0)]
+            return scenes
+        except Exception as e:
+            LOGGER.error(f"Error segmentando uniformemente {video_path}: {e}")
+            return []
+
+    # --- Fallback: PySceneDetect (tu código original) ---
     try:
         video = open_video(video_path)
         sm = SceneManager()
-        sm.add_detector(ContentDetector(threshold=22))  # más cortes (mejor para ventanas largas)
+        sm.add_detector(ContentDetector(threshold=22))
         sm.detect_scenes(video, show_progress=False)
         scene_list = sm.get_scene_list()
         scenes: List[Scene] = []
@@ -401,7 +445,7 @@ def analyze_hybrid(video_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     scenes = detect_scenes(video_path)
 
     records = []
-    pbar = tqdm(scenes, desc="Analizando escenas")
+    pbar = tqdm(scenes, desc="Analizando segmentos 0.5s" if USE_UNIFORM_SEGMENTS else "Analizando escenas")
     for sc in pbar:
         times = sample_times_within_scene(sc.start, sc.end)
         for t_start in times:
