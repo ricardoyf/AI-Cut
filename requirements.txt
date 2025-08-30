@@ -1,0 +1,18 @@
+
+---
+
+## 📋 `requirements.txt`
+
+```txt
+torch
+opencv-python
+numpy
+pandas
+pyarrow
+xgboost
+scenedetect
+scikit-learn
+tqdm
+ultralytics
+# opcional:
+# ultralogger
