@@ -1,0 +1,48 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.ricardo.videocortes"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.ricardo.videocortes"
+        minSdk 26
+        targetSdk 34
+        versionCode 7
+        versionName "1.6"
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file("../.local/debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+        }
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile "../AndroidManifest.xml"
+            java.srcDirs = ["../src"]
+            res.srcDirs = ["../res"]
+        }
+    }
+}
+
+dependencies {
+    implementation "androidx.media3:media3-exoplayer:1.4.1"
+    implementation "androidx.media3:media3-ui:1.4.1"
+}
